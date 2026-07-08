@@ -19,11 +19,28 @@ const ROOT = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z
 const args = process.argv.slice(2);
 const MOCK = args.includes("--mock");
 const KEEP = args.includes("--keep");
-const subject = args.filter((a) => !a.startsWith("--")).join(" ").trim();
+const articleIdx = args.indexOf("--article");
+const ARTICLE_SLUG = articleIdx !== -1 ? args[articleIdx + 1] : null;
+let subject = args.filter((a, i) => !a.startsWith("--") && i !== articleIdx + 1).join(" ").trim();
 
-if (!subject) {
-  console.error('Usage : node create-video.mjs "Sujet de la vidéo" [--mock] [--keep]');
+if (!subject && !ARTICLE_SLUG) {
+  console.error('Usage : node create-video.mjs "Sujet" [--mock] [--keep]');
+  console.error('        node create-video.mjs --article <slug-article>   (short depuis un article du blog)');
   process.exit(1);
+}
+
+/* Mode article : récupère l'article publié sur le blog DDUNIT (lecture publique) */
+let ARTICLE = null;
+if (ARTICLE_SLUG) {
+  const res = await fetch(
+    `${process.env.SUPABASE_URL}/rest/v1/articles?slug=eq.${encodeURIComponent(ARTICLE_SLUG)}&status=eq.published&select=slug,title,content,phase`,
+    { headers: { apikey: process.env.SUPABASE_ANON_KEY, Authorization: `Bearer ${process.env.SUPABASE_ANON_KEY}` } }
+  );
+  const rows = await res.json();
+  if (!rows?.[0]) { console.error(`❌ Article introuvable ou non publié : ${ARTICLE_SLUG}`); process.exit(1); }
+  ARTICLE = rows[0];
+  subject = ARTICLE.title;
+  console.log(`📰 Mode article : « ${ARTICLE.title} » (${ARTICLE_SLUG})`);
 }
 
 const slug = subject
@@ -85,7 +102,12 @@ async function writeScript() {
           `Réponds UNIQUEMENT en JSON : {"title":"titre court","sections":[{"text":"1-2 phrases parlées naturelles","image_query":"2-4 mots-clés EN ANGLAIS pour une photo de fond"}]}.\n` +
           `Contraintes : 5 à 7 sections ; la 1ère est un hook puissant ; la dernière invite à visiter ddunit.com (dire « ddunit point com ») ; total 110-150 mots (≈ 45-60 s de voix off) ; pas d'emojis ni de didascalies — uniquement le texte à prononcer.`,
       },
-      { role: "user", content: `Sujet de la vidéo : ${subject}` },
+      {
+        role: "user",
+        content: ARTICLE
+          ? `Adapte cet article du blog DDUNIT en script vidéo (la vidéo renvoie vers l'article complet — terminer par « l'article complet est sur le blog, ddunit point com »).\n\nTITRE : ${ARTICLE.title}\n\nARTICLE :\n${String(ARTICLE.content).slice(0, 4000)}`
+          : `Sujet de la vidéo : ${subject}`,
+      },
     ],
   };
   const json = await fetchJson("https://api.groq.com/openai/v1/chat/completions", {
@@ -103,7 +125,11 @@ async function writeScript() {
 async function makeVoiceover(script) {
   const audioRel = `work-${slug}/voice.mp3`;
   const audioAbs = path.join(publicDir, audioRel);
-  const fullText = script.sections.map((s) => s.text).join(" ");
+  const PHONETIC = process.env.DDUNIT_PHONETIC || "Ddounith";
+  // Le TTS reçoit la phonétique kabyle ; les sous-titres réafficheront « DDUNIT »
+  const fullText = script.sections.map((s) => s.text).join(" ")
+    .replace(/ddunit point com/gi, `${PHONETIC} point com`)
+    .replace(/DDUNIT/gi, PHONETIC);
 
   if (MOCK) {
     log("2/5 VOIX", "mode mock — piste silencieuse + timings simulés");
@@ -151,7 +177,10 @@ async function makeVoiceover(script) {
     }
   }
   if (cur) words.push(cur);
-  for (const w of words) w.text = w.text.replace(/[.,!?;:«»"]+$/g, "").replace(/^[«"]+/g, "");
+  for (const w of words) {
+    w.text = w.text.replace(/[.,!?;:«»"]+$/g, "").replace(/^[«"]+/g, "");
+    if (w.text.toLowerCase() === PHONETIC.toLowerCase()) w.text = "DDUNIT";
+  }
   const durationSec = words.length ? words[words.length - 1].end + 0.8 : 10;
   console.log(`   → ${Math.round(durationSec)} s de voix, ${words.length} mots synchronisés`);
   return { audioRel, durationSec, words, alignment: al, fullText };
