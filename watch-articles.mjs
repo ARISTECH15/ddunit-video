@@ -22,6 +22,15 @@ const STATE = path.join(ROOT, "processed.json");
 const state = fs.existsSync(STATE)
   ? JSON.parse(fs.readFileSync(STATE, "utf8").replace(/^﻿/, ""))
   : { done: [] };
+
+// Verrou anti-exécutions concurrentes (tâche planifiée vs lancement manuel)
+const LOCK = path.join(ROOT, ".watch.lock");
+if (fs.existsSync(LOCK) && Date.now() - fs.statSync(LOCK).mtimeMs < 60 * 60e3) {
+  console.log("Un autre passage est en cours (verrou < 60 min) — abandon.");
+  process.exit(0);
+}
+fs.writeFileSync(LOCK, String(process.pid));
+process.on("exit", () => { try { fs.rmSync(LOCK, { force: true }); } catch {} });
 const say = (m) => console.log(`[${new Date().toISOString().slice(0, 16)}] ${m}`);
 
 const URL_ = process.env.SUPABASE_URL;
@@ -59,6 +68,15 @@ async function uploadVideo(slug, file) {
 /** Programme la publication du short : vidéo FB (+15 min) et Reel IG (+45 min).
  *  Les workflows n8n « Social FB Vidéo » et « Social IG Reels » s'en chargent. */
 async function schedulePosts(article, videoUrl) {
+  // Déduplication : ne jamais reprogrammer un short déjà en file/publié
+  const check = await fetch(
+    `${URL_}/rest/v1/social_posts?source=eq.${encodeURIComponent("video:" + article.slug)}&select=id&limit=1`,
+    { headers: { apikey: SVC, Authorization: `Bearer ${SVC}` } }
+  );
+  if ((await check.json())?.length) {
+    say(`↪️ Posts déjà programmés pour ${article.slug} — on ne double pas.`);
+    return;
+  }
   const link = `https://ddunit.com/blog/${article.slug}?utm_source=video&utm_campaign=shorts`;
   const caption =
     `🎬 ${article.title}\n\nL'essentiel en moins d'une minute — l'article complet est sur le blog 👉 ddunit.com\n\n#DDUNIT #LifeOS #Famille #ConseilsDeVie`;
