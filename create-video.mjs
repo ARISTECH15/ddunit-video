@@ -43,11 +43,14 @@ if (ARTICLE_SLUG) {
   console.log(`📰 Mode article : « ${ARTICLE.title} » (${ARTICLE_SLUG})`);
 }
 
-const slug = subject
-  .toLowerCase()
-  .normalize("NFD").replace(/[̀-ͯ]/g, "")
-  .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-  .slice(0, 60);
+// En mode article, la vidéo porte le slug de l'ARTICLE (attendu par le veilleur)
+const slug = ARTICLE
+  ? ARTICLE.slug.slice(0, 60)
+  : subject
+      .toLowerCase()
+      .normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+      .slice(0, 60);
 
 const publicDir = path.join(ROOT, "public");
 const workDir = path.join(publicDir, `work-${slug}`);

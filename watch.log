@@ -1,0 +1,36 @@
+<anonymous_script>:1
+﻿{"done":["5-choses-a-preparer-avant-conception","sommeil-de-bebe-0-12-mois","diversification-alimentaire-petite-enfance"]}
+^
+
+SyntaxError: Unexpected token '﻿', "﻿{"done":["... is not valid JSON
+    at JSON.parse (<anonymous>)
+    at file:///C:/Projects/video-automation/watch-articles.mjs:22:43
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.11.0
+<anonymous_script>:1
+﻿{"done":["5-choses-a-preparer-avant-conception","sommeil-de-bebe-0-12-mois","diversification-alimentaire-petite-enfance"]}
+^
+
+SyntaxError: Unexpected token '﻿', "﻿{"done":["... is not valid JSON
+    at JSON.parse (<anonymous>)
+    at file:///C:/Projects/video-automation/watch-articles.mjs:22:43
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.11.0
+<anonymous_script>:1
+﻿{"done":["5-choses-a-preparer-avant-conception","sommeil-de-bebe-0-12-mois","diversification-alimentaire-petite-enfance"]}
+^
+
+SyntaxError: Unexpected token '﻿', "﻿{"done":["... is not valid JSON
+    at JSON.parse (<anonymous>)
+    at file:///C:/Projects/video-automation/watch-articles.mjs:22:43
+    at ModuleJob.run (node:internal/modules/esm/module_job:377:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:691:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.11.0
