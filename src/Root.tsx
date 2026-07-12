@@ -1,6 +1,11 @@
 import { Composition, staticFile } from "remotion";
 import { DdunitShort, VideoProps, FPS } from "./Video";
 import { DdunitExplainer, ExplainerProps } from "./Explainer";
+import { AlertivaJT, JTProps, JT_FPS } from "./AlertivaJT";
+
+const defaultJTProps: JTProps = {
+  durationSec: 10, audioFile: "", date: "", segments: [{ type: "intro", from: 0, to: 10 }], cues: [],
+};
 
 const defaultExplainerProps: ExplainerProps = {
   durationSec: 10,
@@ -20,6 +25,24 @@ const defaultProps: VideoProps = {
 export const RemotionRoot: React.FC = () => {
   return (
     <>
+    <Composition
+      id="AlertivaJT"
+      component={AlertivaJT}
+      width={1080}
+      height={1920}
+      fps={JT_FPS}
+      defaultProps={defaultJTProps}
+      calculateMetadata={async ({ props }) => {
+        if (!props.audioFile) {
+          try {
+            const res = await fetch(staticFile("work-jt/props.json"));
+            const j = (await res.json()) as JTProps;
+            return { durationInFrames: Math.ceil(j.durationSec * JT_FPS), props: j };
+          } catch { /* défauts */ }
+        }
+        return { durationInFrames: Math.max(1, Math.ceil(props.durationSec * JT_FPS)) };
+      }}
+    />
     <Composition
       id="DdunitShort"
       component={DdunitShort}
