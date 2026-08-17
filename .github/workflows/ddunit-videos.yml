@@ -1,0 +1,72 @@
+name: DDUNIT — Usine à vidéos (cloud)
+
+# Rendu 100% en ligne : plus besoin de garder le PC allumé ni la tâche planifiée
+# Windows. Le blog publie ~1-2 articles/jour ; on passe 4×/jour pour rattraper.
+on:
+  schedule:
+    - cron: "0 6,10,14,18 * * *"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publier sur FB/IG ? Décoché = rendu de TEST (ni upload ni post)."
+        type: boolean
+        default: false
+      days:
+        description: "Fenêtre d'articles récents (jours)"
+        default: "7"
+      cap:
+        description: "Nombre max de vidéos par run"
+        default: "4"
+
+concurrency:
+  group: ddunit-videos
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Voix off gratuite (edge-tts, repli quand ElevenLabs est à sec)
+        run: python -m pip install --upgrade edge-tts
+
+      - name: Dépendances système (ffmpeg + libs Chrome headless)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 \
+            libcups2 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 \
+            libpango-1.0-0 libcairo2 libasound2 fonts-liberation
+
+      - name: Installer les dépendances Node
+        run: npm ci
+
+      - name: Préparer le navigateur de rendu (Remotion)
+        run: npx remotion browser ensure
+
+      - name: Produire les vidéos des articles récents sans vidéo
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          # Voix premium ElevenLabs (facultatif) : présente = utilisée tant qu'il reste
+          # des crédits ; sinon repli automatique gratuit edge-tts.
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          WATCH_DAYS: ${{ github.event.inputs.days || '7' }}
+          VIDEO_CAP: ${{ github.event.inputs.cap || '4' }}
+          # Cron = publication réelle ; dispatch = uniquement si "publish" coché.
+          PUBLISH: ${{ (github.event_name == 'schedule' || github.event.inputs.publish == 'true') && '1' || '0' }}
+        run: node render-cloud.mjs
