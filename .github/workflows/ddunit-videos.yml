@@ -1,4 +1,5 @@
 name: DDUNIT — Usine à vidéos (cloud)
+# Rendu cloud : edge-tts (repli voix) + chaîne de modèles Groq. Indexation v1.
 
 # Rendu 100% en ligne : plus besoin de garder le PC allumé ni la tâche planifiée
 # Windows. Le blog publie ~1-2 articles/jour ; on passe 4×/jour pour rattraper.
