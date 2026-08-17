@@ -53,6 +53,19 @@ async function existingVideoSlugs() {
   return new Set((items || []).filter((o) => o.name?.endsWith(".mp4")).map((o) => o.name.replace(/\.mp4$/, "")));
 }
 
+/** Slugs déjà TRAITÉS = posts `video:<slug>` dans social_posts. Ceux-ci PERSISTENT
+ *  même après suppression de la vidéo du bucket → évite de re-fabriquer une vidéo
+ *  déjà publiée puis supprimée. Dégrade en Set vide si la requête échoue. */
+async function scheduledVideoSlugs() {
+  try {
+    const r = await fetch(`${URL_}/rest/v1/social_posts?source=like.video:*&select=source`,
+      { headers: { apikey: SVC, Authorization: `Bearer ${SVC}` } });
+    if (!r.ok) return new Set();
+    const rows = await r.json();
+    return new Set((rows || []).map((x) => String(x.source || "").replace(/^video:/, "")).filter(Boolean));
+  } catch { return new Set(); }
+}
+
 async function uploadVideo(slug, file) {
   const r = await fetch(`${URL_}/storage/v1/object/social/videos/${slug}.mp4`, {
     method: "POST",
@@ -86,7 +99,8 @@ async function schedulePosts(article, videoUrl) {
 }
 
 // ─────────────────────────────── run ───────────────────────────────
-const [recent, done] = await Promise.all([recentArticles(), existingVideoSlugs()]);
+const [recent, bucketDone, schedDone] = await Promise.all([recentArticles(), existingVideoSlugs(), scheduledVideoSlugs()]);
+const done = new Set([...bucketDone, ...schedDone]); // vidéo présente OU déjà publiée
 const todo = recent.filter((a) => !done.has(a.slug)).slice(0, CAP);
 say(`${recent.length} articles récents · ${done.size} déjà en vidéo → ${todo.length} à produire (cap ${CAP}, publish=${PUBLISH ? 1 : 0})`);
 if (!todo.length) { say("Rien de nouveau."); process.exit(0); }
