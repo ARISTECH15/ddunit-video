@@ -161,6 +161,30 @@ const Branding: React.FC = () => {
   );
 };
 
+/** Marque EN HAUT AU CENTRE, visible pendant toute la vidéo : renvoie vers le site. */
+const TopBrand: React.FC = () => (
+  <AbsoluteFill style={{ justifyContent: "flex-start", alignItems: "center" }}>
+    <div
+      style={{
+        marginTop: 72,
+        padding: "14px 34px",
+        borderRadius: 999,
+        background: "rgba(13,13,20,0.62)",
+        border: `2px solid ${GOLD}`,
+        boxShadow: "0 6px 22px rgba(0,0,0,0.55)",
+        fontFamily: "Arial, Helvetica, sans-serif",
+        fontWeight: 900,
+        fontSize: 46,
+        letterSpacing: 1,
+        color: CREAM,
+        textShadow: "0 0 10px rgba(0,0,0,0.85)",
+      }}
+    >
+      <span style={{ color: GOLD }}>ddunit</span>.com
+    </div>
+  </AbsoluteFill>
+);
+
 export const DdunitShort: React.FC<VideoProps> = ({
   audioFile,
   sections,
@@ -183,6 +207,7 @@ export const DdunitShort: React.FC<VideoProps> = ({
       })}
       <Captions words={words} />
       <Branding />
+      <TopBrand />
       {audioFile ? <Audio src={staticFile(audioFile)} /> : null}
     </AbsoluteFill>
   );

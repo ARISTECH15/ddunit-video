@@ -102,7 +102,7 @@ async function writeScript() {
         content:
           `Tu écris des scripts de vidéos verticales (TikTok/Reels/Shorts) pour DDUNIT, l'écosystème francophone qui accompagne les 12 phases de la vie. Ton : chaleureux, concret, rythmé. Jamais de diagnostic médical ni de conseil financier réglementé.\n` +
           `Réponds UNIQUEMENT en JSON : {"title":"titre court","sections":[{"text":"1-2 phrases parlées naturelles","image_query":"2-4 mots-clés EN ANGLAIS pour une photo de fond"}]}.\n` +
-          `Contraintes : 5 à 7 sections ; la 1ère est un hook puissant ; la dernière invite à visiter ddunit.com (dire « ddunit point com ») ; total 110-150 mots (≈ 45-60 s de voix off) ; pas d'emojis ni de didascalies — uniquement le texte à prononcer.`,
+          `Contraintes : 7 à 9 sections ; la 1ère est un hook puissant ; la dernière invite à visiter ddunit.com (dire « ddunit point com ») ; total 190-210 mots — IMPÉRATIF : la vidéo doit DÉPASSER 1 minute (≈ 80 s de voix off) pour être monétisable sur TikTok, ne descends JAMAIS sous 190 mots ; développe chaque section avec un exemple concret ou un chiffre pour tenir la durée sans remplissage creux ; pas d'emojis ni de didascalies — uniquement le texte à prononcer.`,
       },
       {
         role: "user",
@@ -125,11 +125,10 @@ async function writeScript() {
     });
     if (res.ok) { json = await res.json(); break; }
     lastErr = `${model} : HTTP ${res.status} — ${(await res.text()).slice(0, 160)}`;
-    if (res.status === 429 || res.status === 413 || res.status >= 500) {
-      console.error(`   ⚠️ ${lastErr} → modèle suivant`);
-      continue;
-    }
-    break; // erreur non liée au quota : inutile d'insister
+    console.error(`   ⚠️ ${lastErr} → modèle suivant`);
+    // On bascule sur le modèle suivant quelle que soit l'erreur (quota 429, modèle
+    // retiré 404, incident 5xx…). Seule une clé invalide (401) échouerait partout.
+    if (res.status === 401) break;
   }
   if (!json) die(`Groq (tous modèles épuisés) : ${lastErr}`);
   const script = JSON.parse(json.choices[0].message.content);
@@ -348,7 +347,10 @@ async function main() {
 
   log("4/5 RENDU", `Remotion (${Math.ceil(voice.durationSec)} s à 30 fps)…`);
   const rawOut = path.join(outDir, `${slug}-raw.mp4`);
-  run("npx", ["remotion", "render", "src/index.ts", "DdunitShort", rawOut, `--props=${propsPath}`], { cwd: ROOT });
+  // --concurrency borné : sur une vidéo >1 min, la concurrence par défaut (= nb de
+  // cœurs) ouvre trop d'onglets Chrome et fait planter le rendu (« Page crashed! » = OOM).
+  run("npx", ["remotion", "render", "src/index.ts", "DdunitShort", rawOut,
+    `--props=${propsPath}`, `--concurrency=${process.env.REMOTION_CONCURRENCY || 2}`], { cwd: ROOT });
 
   log("5/5 FINITION", "FFmpeg : normalisation audio (-14 LUFS) + faststart…");
   const finalOut = path.join(outDir, `${slug}.mp4`);
