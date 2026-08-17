@@ -94,7 +94,6 @@ async function writeScript() {
   const key = process.env.GROQ_API_KEY || die("GROQ_API_KEY manquante dans .env");
   log("1/5 SCRIPT", `Groq rédige le script pour « ${subject} »…`);
   const body = {
-    model: "llama-3.3-70b-versatile",
     temperature: 0.7,
     response_format: { type: "json_object" },
     messages: [
@@ -113,11 +112,26 @@ async function writeScript() {
       },
     ],
   };
-  const json = await fetchJson("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  }, "Groq");
+  // Chaîne de modèles Groq : chaque modèle a son PROPRE quota journalier (TPD).
+  // Quand llama-3.3-70b est épuisé (429), on bascule sur gpt-oss-120b puis 20b.
+  const MODELS = (process.env.GROQ_MODELS ||
+    "llama-3.3-70b-versatile,openai/gpt-oss-120b,openai/gpt-oss-20b").split(",").map((m) => m.trim());
+  let json = null, lastErr = "aucune réponse";
+  for (const model of MODELS) {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, model }),
+    });
+    if (res.ok) { json = await res.json(); break; }
+    lastErr = `${model} : HTTP ${res.status} — ${(await res.text()).slice(0, 160)}`;
+    if (res.status === 429 || res.status === 413 || res.status >= 500) {
+      console.error(`   ⚠️ ${lastErr} → modèle suivant`);
+      continue;
+    }
+    break; // erreur non liée au quota : inutile d'insister
+  }
+  if (!json) die(`Groq (tous modèles épuisés) : ${lastErr}`);
   const script = JSON.parse(json.choices[0].message.content);
   if (!script.sections?.length) die("Script Groq invalide (sections manquantes)");
   console.log(`   → ${script.sections.length} sections, ${script.sections.map(s => s.text).join(" ").split(/\s+/).length} mots`);
