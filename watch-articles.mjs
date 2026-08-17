@@ -38,7 +38,8 @@ const ANON = process.env.SUPABASE_ANON_KEY;
 const SVC = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function recentArticles() {
-  const since = new Date(Date.now() - 7 * 864e5).toISOString();
+  const DAYS = Number(process.env.WATCH_DAYS) || 7; // WATCH_DAYS=20 pour rattraper un retard
+  const since = new Date(Date.now() - DAYS * 864e5).toISOString();
   const res = await fetch(
     `${URL_}/rest/v1/articles?status=eq.published&created_at=gte.${since}&select=slug,title&order=created_at.desc`,
     { headers: { apikey: ANON, Authorization: `Bearer ${ANON}` } }

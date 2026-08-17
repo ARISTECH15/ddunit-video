@@ -147,46 +147,119 @@ async function makeVoiceover(script) {
     };
   }
 
-  const key = process.env.ELEVENLABS_API_KEY || die("ELEVENLABS_API_KEY manquante dans .env");
-  const voice = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
-  log("2/5 VOIX", `ElevenLabs (voix ${voice})…`);
-  const json = await fetchJson(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voice}/with-timestamps`,
-    {
-      method: "POST",
-      headers: { "xi-api-key": key, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: fullText,
-        model_id: "eleven_multilingual_v2",
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-      }),
-    },
-    "ElevenLabs"
-  );
-  fs.writeFileSync(audioAbs, Buffer.from(json.audio_base64, "base64"));
+  const voiceId = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
+  const key = process.env.ELEVENLABS_API_KEY;
 
-  // Reconstitue les mots depuis l'alignement caractère par caractère
-  const al = json.alignment;
+  // Voix premium ElevenLabs tant que des crédits sont dispo ; sinon REPLI GRATUIT
+  // edge-tts. Un quota ElevenLabs épuisé ne doit plus jamais arrêter l'usine.
+  if (key) {
+    try {
+      log("2/5 VOIX", `ElevenLabs (voix ${voiceId})…`);
+      const res = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps`,
+        {
+          method: "POST",
+          headers: { "xi-api-key": key, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: fullText,
+            model_id: "eleven_multilingual_v2",
+            voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+          }),
+        }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status} — ${(await res.text()).slice(0, 200)}`);
+      const json = await res.json();
+      fs.writeFileSync(audioAbs, Buffer.from(json.audio_base64, "base64"));
+
+      // Reconstitue les mots depuis l'alignement caractère par caractère
+      const al = json.alignment;
+      const words = [];
+      let cur = null;
+      for (let i = 0; i < al.characters.length; i++) {
+        const ch = al.characters[i];
+        if (/\s/.test(ch)) {
+          if (cur) { words.push(cur); cur = null; }
+        } else {
+          if (!cur) cur = { text: "", start: al.character_start_times_seconds[i], end: 0 };
+          cur.text += ch;
+          cur.end = al.character_end_times_seconds[i];
+        }
+      }
+      if (cur) words.push(cur);
+      for (const w of words) {
+        w.text = w.text.replace(/[.,!?;:«»"]+$/g, "").replace(/^[«"]+/g, "");
+        if (w.text.toLowerCase() === PHONETIC.toLowerCase()) w.text = "DDUNIT";
+      }
+      const durationSec = words.length ? words[words.length - 1].end + 0.8 : 10;
+      console.log(`   → ${Math.round(durationSec)} s de voix, ${words.length} mots synchronisés`);
+      return { audioRel, durationSec, words, alignment: al, fullText };
+    } catch (e) {
+      console.error(`   ⚠️ ElevenLabs indisponible (${String(e.message || e).slice(0, 140)}) → repli GRATUIT edge-tts`);
+    }
+  } else {
+    console.error("   ⚠️ ELEVENLABS_API_KEY absente → repli GRATUIT edge-tts");
+  }
+
+  return makeVoiceoverEdge(fullText, audioAbs, audioRel, PHONETIC);
+}
+
+/* Repli GRATUIT : edge-tts (Microsoft Neural). Produit la voix + des timings mot
+ * à mot approchés depuis les sous-titres edge-tts (répartition uniforme si le VTT
+ * est indisponible), au MÊME format de retour que la branche ElevenLabs. */
+function makeVoiceoverEdge(fullText, audioAbs, audioRel, PHONETIC) {
+  const voice = process.env.EDGE_TTS_VOICE || "fr-FR-HenriNeural";
+  const PY = process.env.PYTHON || "python";
+  const txt = path.join(workDir, "voice.txt");
+  const vtt = path.join(workDir, "voice.vtt");
+  fs.writeFileSync(txt, fullText, "utf8");
+  log("2/5 VOIX", `repli gratuit edge-tts (voix ${voice})…`);
+  const r = spawnSync(PY, ["-m", "edge_tts", "--voice", voice, "--file", txt,
+    "--write-media", audioAbs, "--write-subtitles", vtt],
+    { stdio: "inherit", shell: process.platform === "win32", cwd: ROOT });
+  if (r.status !== 0 || !fs.existsSync(audioAbs)) die("edge-tts a échoué (repli voix indisponible).");
+
+  const parseTs = (s) => {
+    const m = s.match(/(\d+):(\d+):(\d+(?:[.,]\d+)?)/);
+    return m ? (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3].replace(",", ".")) : 0;
+  };
   const words = [];
-  let cur = null;
-  for (let i = 0; i < al.characters.length; i++) {
-    const ch = al.characters[i];
-    if (/\s/.test(ch)) {
-      if (cur) { words.push(cur); cur = null; }
-    } else {
-      if (!cur) cur = { text: "", start: al.character_start_times_seconds[i], end: 0 };
-      cur.text += ch;
-      cur.end = al.character_end_times_seconds[i];
+  let lastEnd = 0;
+  if (fs.existsSync(vtt)) {
+    for (const block of fs.readFileSync(vtt, "utf8").split(/\r?\n\r?\n/)) {
+      const lines = block.split(/\r?\n/);
+      const tl = lines.find((l) => /-->/.test(l));
+      if (!tl) continue;
+      const [a, b] = tl.split("-->");
+      const start = parseTs(a), end = parseTs(b);
+      const toks = lines.slice(lines.indexOf(tl) + 1).join(" ").trim().split(/\s+/).filter(Boolean);
+      if (!toks.length) continue;
+      const span = Math.max(0.02, end - start) / toks.length;
+      toks.forEach((t, k) => words.push({ text: t, start: start + k * span, end: start + (k + 1) * span - 0.02 }));
+      lastEnd = end;
     }
   }
-  if (cur) words.push(cur);
+
+  let durationSec;
+  if (words.length) {
+    durationSec = lastEnd + 0.8;
+  } else {
+    // Aucun VTT exploitable : durée via ffprobe (repli ~150 mots/min) + répartition uniforme.
+    const p = spawnSync("ffprobe",
+      ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", audioAbs],
+      { encoding: "utf8", shell: process.platform === "win32" });
+    const toks = fullText.split(/\s+/).filter(Boolean);
+    const dur = parseFloat((p.stdout || "").trim()) || (toks.length / 150) * 60;
+    const per = dur / Math.max(1, toks.length);
+    toks.forEach((t, i) => words.push({ text: t, start: i * per, end: (i + 1) * per - 0.05 }));
+    durationSec = dur + 0.4;
+  }
+
   for (const w of words) {
     w.text = w.text.replace(/[.,!?;:«»"]+$/g, "").replace(/^[«"]+/g, "");
     if (w.text.toLowerCase() === PHONETIC.toLowerCase()) w.text = "DDUNIT";
   }
-  const durationSec = words.length ? words[words.length - 1].end + 0.8 : 10;
-  console.log(`   → ${Math.round(durationSec)} s de voix, ${words.length} mots synchronisés`);
-  return { audioRel, durationSec, words, alignment: al, fullText };
+  console.log(`   → ${Math.round(durationSec)} s de voix (edge-tts), ${words.length} mots`);
+  return { audioRel, durationSec, words, fullText };
 }
 
 /* ──────── répartition des sections sur la timeline (par proportion de texte) ──────── */
